@@ -1,0 +1,15 @@
+/* Bootstrap advanced & smart import (less import & function enough) */
+@import '~bootstrap/scss/functions',
+'~bootstrap/scss/variables',
+'~bootstrap/scss/mixins',
+'~bootstrap/scss/print',
+'~bootstrap/scss/reboot',
+'~bootstrap/scss/type';
+/* *************************************************************** */
+/* You can add global styles to this file, and also import other style files */
+@import "mixins";
+@import "variables";
+
+
+
+@import "~@angular/material/prebuilt-themes/indigo-pink.css";
