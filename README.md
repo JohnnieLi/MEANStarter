@@ -24,10 +24,9 @@ This Angular5 project was generated with [Angular CLI](https://github.com/angula
 
 Combine Front-end side (Angular5) with Back-end server(Node.js+ express).
 
+## Development server
 
-##Development server
-
-###1.server side: 
+### 1.server side: 
 
 Location: root folder
 
