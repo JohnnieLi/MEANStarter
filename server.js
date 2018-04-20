@@ -1,14 +1,15 @@
 // =======================
 // get the packages we need ============
 // =======================
-var express = require('express');
-var app = express();
-var bodyParser = require('body-parser');
-var path = require('path');
+let express = require('express');
+let app = express();
+let bodyParser = require('body-parser');
+let path = require('path');
+let mongoose = require('mongoose');
 
-var compression = require('compression')
-var config = require('./config/config'); // get our config file
-var cors = require('./config/cors');//get Cross-Origin Resource Sharing (CORS) config
+let compression = require('compression')
+let config = require('./config/config'); // get our config file
+let cors = require('./config/cors');//get Cross-Origin Resource Sharing (CORS) config
 
 const api = require('./api');
 
@@ -28,6 +29,19 @@ app.use('/api', api);
 
 const port = 3000;
 
-var server = app.listen(port, function() {
-	console.log('listening on port', server.address().port);
-})
+// let server = app.listen(port, function() {
+// 	console.log('listening on port', server.address().port);
+// });
+
+config.init(port, function(){
+	mongoose.connect(config.database(), function (err) {
+		if (!err) {
+			console.log("we are connected to mongo in ", config.environment());
+			let server =  app.listen(port, function () {
+				console.log('listening on port', server.address().port);
+			});
+		} else {
+			console.log(err);
+		}
+	}); // connect to database
+});
