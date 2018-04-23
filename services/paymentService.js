@@ -6,6 +6,7 @@
 ********************************************************* */
 let User = require('../models/User');
 let MemberShip = require('../models/MemberShip');
+let License = require('../models/License');
 let BusinessManDetail = require('../models/BusinessManDetail')
 let config = require('./config/config'); // get our config file
 let stripe = require("stripe")(config.stripeKey());
@@ -13,7 +14,169 @@ let ObjectId = require('mongodb').ObjectID;
 
 module.exports = {
 
-	//total new
+	createLicense: async function(req, res) {
+		let user_id = req.decodedUser._id;
+		let token = req.body.token;
+		let plan = req.body.plan;
+		let discount = req.body.discount;
+		try{
+			let customer = await createStripeCustomer(token, user_id);
+			if(customer){
+				let subscription = await createSubscription(customer, plan.id, discount);
+				if(subscription){
+					let _id = new ObjectId();
+					let license = new License({
+						_id: _id,
+						customerId: customer.id,
+						subscriptionId: subscription.id,
+						period: plan.period,
+						period_start: subscription.current_period_start,
+						nextBillingDate: subscription.current_period_end,
+						PlanId: plan.id,
+						user_id: user_id,
+						status: subscription.status, //active, inactive
+					});
+					license.save(function(err) {
+						if(err){
+							return res.json({success: false, message: err.message});
+						}
+						else{
+							return res.json({success: true, result: _id});
+						}
+					});// end of save memeberShip
+				}// end of create subscription
+				return res.json({success: false, message: 'subscription created failed'})
+			}// end of create customer
+			return res.json({success: false, message: 'customer created failed'})
+		} catch(e){
+			return res.json({success: false, message: e.message});
+		}
+	},
+
+
+	activeLicense: async function(req, res) {
+		let user_id = req.decodedUser._id;
+		let memberShip_id = req.decodedUser.memberShip_id;
+		let license = req.body.license;
+		if(memberShip_id){ // if has membership before
+			let memberShipValues = {
+				'type': 1,
+				'license_id': license._id,
+				'period': license.period,
+				'status': license.status,
+				'period_start': license.period_start,
+				'nextBillingDate': license.nextBillingDate,
+				'PlanId': license.PlanId
+			};
+			MemberShip.update({'_id': memberShip_id, 'user_id': user_id}, {
+				$set: memberShipValues
+			}, function(err, result) {
+				if(err){
+					return res.json({success: false, message: err.message});
+				}
+				else{
+					return res.json({success: true, result: result});
+				}
+			});
+		}
+		else{ // if totally new , create a new membership
+			let _id = new ObjectId();
+			let member = new MemberShip({
+				_id: _id,
+				type: 1,
+				license_id: license._id,
+				customerId: null,
+				subscriptionId: null,
+				period: license.period,
+				period_start: license.period_start,
+				nextBillingDate: license.nextBillingDate,
+				PlanId: license.PlanId,
+				user_id: user_id,
+				status: license.status,
+				specialPromo: false  // default = false, if is true, then belong to Free account without payment information
+			});
+			member.save(function(err) {
+				if(err){
+					return res.json({success: false, message: err.message});
+				}
+				else{
+					const userValues = {
+						'role': 2,
+						'memberShip_id': _id,
+					};
+					User.update({'_id': user_id}, {
+						$set: userValues
+					}, function(err, result) {
+						if(err){
+							return res.json({success: false, message: err.message});
+						}
+						else{
+							//create business man detail page
+							let detail = new BusinessManDetail({
+								user_id: user_id,
+								memberShip_id: _id,
+							});
+							detail.save(function(err) {
+								if(err){
+									return res.json({success: false, message: err.message});
+								}
+								else{
+									return res.json({success: true});
+								}
+							});
+						}
+					});
+				}
+			});// end of save memeberShip
+		}
+	},
+
+
+	inactiveLicense: async function(req, res) {
+		let user_id = req.decodedUser._id;
+		let memberShip_id = req.decodedUser.memberShip_id;
+		let license = req.body.license;
+		let memberShipValues = {
+			'type': 0,
+			'license_id': null,
+			'period': null,
+			'status': 'cancelled',
+			'period_start': null,
+			'nextBillingDate': Date() + 1,
+			'PlanId': null
+		};
+		MemberShip.update({'_id': memberShip_id, 'user_id': user_id}, {
+			$set: memberShipValues
+		}, function(err, result) {
+			if(err){
+				return res.json({success: false, message: err.message});
+			}
+			else{
+				return res.json({success: true, result: result});
+			}
+		});
+	},
+
+
+	getLicense: function(req, res) {
+		let license = req.body.license;
+		License.findOne({_id: license._id}, function(err, result) {
+			if(err){
+				return res.json({success: false, message: err.message});
+			}
+			if(result){
+				MemberShip.findOne({type: 1, license_id: result._id}, function(err, usedBy){
+					if(err){
+						return res.json({success: false, result: result, usedBy: null});
+					}
+					return res.json({success: true, result: result, usedBy: usedBy});
+				});
+			}
+		});
+	},
+
+	
+	//total new by self-payment
 	addMemberShip: async function(req, res) {
 		let user_id = req.decodedUser._id;
 		let token = req.body.token;
@@ -27,92 +190,96 @@ module.exports = {
 					let _id = new ObjectId();
 					let member = new MemberShip({
 						_id: _id,
+						type: 0,
 						customerId: customer.id,
 						subscriptionId: subscription.id,
 						period: plan.period,
 						period_start: subscription.current_period_start,
 						nextBillingDate: subscription.current_period_end,
-						Plan_id: plan._id,
+						PlanId: plan.id,
 						user_id: user_id,
 						status: subscription.status, //active, inactive
 						specialPromo: false  // default = false, if is true, then belong to Free account without payment information
 					});
 					member.save(function(err) {
 						if(err){
-							res.json({success: false, message: err.message});
+							return res.json({success: false, message: err.message});
 						}
 						else{
+							const userValues = {
+								'role': 2,
+								'memberShip_id': _id,
+							};
 							User.update({'_id': user_id}, {
-								$set: {
-									'role': 2,
-									'memberShip_id': _id,
-									'plan_id': plan._id,
-								}
-							}, function(err) {
+								$set: userValues
+							}, function(err, result) {
 								if(err){
 									return res.json({success: false, message: err.message});
 								}
 								else{
-									return res.json({success: true, result: plan._id});  // let FE user update grade and role
+									//create business man detail page
+									let detail = new BusinessManDetail({
+										user_id: user_id,
+										memberShip_id: _id,
+									});
+									detail.save(function(err) {
+										if(err){
+											return res.json({success: false, message: err.message});
+										}
+										else{
+											return res.json({success: true});
+										}
+									});
 								}
 							});
 						}
 					});// end of save memeberShip
 				}// end of create subscription
+				return res.json({success: false, message: 'subscription created failed'})
 			}// end of create customer
+			return res.json({success: false, message: 'customer created failed'})
 		} catch(e){
 			return res.json({success: false, message: e.message});
 		}
 	},
 
-	//canceled before, then continue(without trail)
-    continueMemberShip: async function(req, res) {
-	    let user_id = req.decodedUser._id;
-	    let token = req.body.token;
-	    let plan = req.body.plan;
-	    let memberShip_id = req.decodedUser.memberShip_id;
-	    let discount = req.body.discount;
-	    try{
-		    let customer = await createStripeCustomer(token, user_id);
-		    if(customer){
-			    let subscription = await createSubscription(customer, plan.id, discount);
-			    if(subscription){
-				    const values = {
-					    'plan_id': plan._id,
-					    'period': plan.period,
-					    'period_start': subscription.current_period_start,
-					    'nextBillingDate': subscription.current_period_end,
-					    'subscriptionId': subscription.id,
-					    'customerId': customer.id,
-					    'status': subscription.status
-				    };
-				    const memberShipUpdated = await updateMemberShip(memberShip_id,values);
-
-				    const userValues = {
-					    'role': 2,
-					    'plan_id':  plan._id,
-				    };
-				    const userUpdated = await updateUser(user_id,userValues);
+	//canceled before, then continue(without trail) by self-payment
+	continueMemberShip: async function(req, res) {
+		let user_id = req.decodedUser._id;
+		let token = req.body.token;
+		let plan = req.body.plan;
+		let memberShip_id = req.decodedUser.memberShip_id;
+		let discount = req.body.discount;
+		try{
+			let customer = await createStripeCustomer(token, user_id);
+			if(customer){
+				let subscription = await createSubscription(customer, plan.id, discount);
+				if(subscription){
+					const values = {
+						'planId': plan.id,
+						'period': plan.period,
+						'period_start': subscription.current_period_start,
+						'nextBillingDate': subscription.current_period_end,
+						'subscriptionId': subscription.id,
+						'customerId': customer.id,
+						'status': subscription.status
+					};
+					const memberShipUpdated = await updateMemberShip(memberShip_id, values);
 
 
-				    const detailValues = {
-					    'availableUntil': subscription.current_period_end,
-				    };
-				    const detailUpdated = await updateDetail(user_id, detailValues);
-
-
-				    return res.json({success: true, result: plan._id});
-			    }// end of create subscription
-			    else{
-				    return res.json({success: false, message:'subscription created failed'});
-			    }
-		    }else{
-			    return res.json({success: false, message: 'customer created failed'});
-		    }// end of create customer
-	    } catch(e){
-		    return res.json({success: false, message: e.message});
-	    }
-    },
+					return res.json({success: true, result: plan._id});
+				}// end of create subscription
+				else{
+					return res.json({success: false, message: 'subscription created failed'});
+				}
+			}
+			else{
+				return res.json({success: false, message: 'customer created failed'});
+			}// end of create customer
+		} catch(e){
+			return res.json({success: false, message: e.message});
+		}
+	},
 
 
 	updatePlan: async function(req, res) {
@@ -125,32 +292,22 @@ module.exports = {
 				let updated = await updateSubscription(memberShip.customerId, memberShip.subscriptionId, plan.id);
 				if(updated){
 					const values = {
-						'plan_id': plan.id,
+						'planId': plan.id,
 						'nextBillingDate': updated.current_period_end,
 						'status': updated.status
 					};
-					const memberShipUpdated = await updateMemberShip(memberShip_id,values);
+					const memberShipUpdated = await updateMemberShip(memberShip_id, values);
 
-					const userValues = {
-						'role': 2,
-						'plan_id': plan._id,
-					};
-
-					const userUpdated = await updateUser(user_id,userValues);
-
-
-					const deatilValues = {
-						'status': 0,
-					};
-					const detailUpdated = await updateDetail(user_id, deatilValues);
-
-
-					return res.json({success: false, message: err.message});
+					if(memberShipUpdated){
+						return res.json({success: true});
+					}
+					return res.json({success: false});
 				}
 				else{
 					return res.json({success: false, message: 'update subscription failed'});  // let FE user update grade and role
 				}
-			}else{
+			}
+			else{
 				return res.json({success: false, message: 'can not find membership'});
 			}
 		} catch(e){
@@ -171,25 +328,15 @@ module.exports = {
 						'plan_id': null,
 						'subscriptionId': null,
 						'customerId': null,
-						'status': 'inactive'
+						'status': 'canceled'
 					};
-					const memberShipUpdated = await updateMemberShip(memberShip_id,values);
+					const memberShipUpdated = await updateMemberShip(memberShip_id, values);
 
-
-					const userValues = {
-						'role': 2,
-						'plan_id': null,
-					};
-
-					const userUpdated = await updateUser(user_id, userValues);
-
-
-					return res.json({success: false, message: err.message});
+					return res.json({success: true, message: "cancelled"});
 				}
-			}else{
-
 			}
-		}catch(e){
+			return res.json({success: false, message: "cancelled failed"});
+		} catch(e){
 			res.json({success: false, message: e.message});
 		}
 	}
@@ -276,7 +423,7 @@ let updateUser = function(user_id, values) {
  * @param {String} user_id - memberShip mongodb _id
  * @param {Object} values - set object
  */
-let updateDetail = function(user_id, values){
+let updateDetail = function(user_id, values) {
 	return new Promise(function(resolve, reject) {
 		BusinessManDetail.update({'user_id': user_id}, {
 			$set: values
@@ -359,7 +506,6 @@ let createSubscriptionWithoutTrial = function(customer, planId, discount) {
 		coupon: coupon,
 	});
 };
-
 
 
 /**

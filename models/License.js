@@ -6,9 +6,7 @@ let Schema = mongoose.Schema;
  * Using stripe (billing) as payment middleware
  * https://stripe.com/docs/api
  */
-let memberShipSchema = Schema({
-	type: Number,  //0: self pay  1: license
-	license_id: {type: Schema.Types.ObjectId, ref:'License'},
+let licenseSchema = Schema({
 	customerId: String,
 	subscriptionId: String,
 	period: String, //Monthly, Yearly
@@ -16,8 +14,7 @@ let memberShipSchema = Schema({
 	nextBillingDate: Date,
 	PlanId: String,
 	user_id: {type: Schema.Types.ObjectId, ref:'User'},
-	status: String, //active, inactive
-	specialPromo : Boolean  // default = false, if is true, then belong to Free account without payment information
+	status: String, //active, cancelled, post-due etc
 });
 
-module.exports = mongoose.model("MemberShip", memberShipSchema);
+module.exports = mongoose.model("License", licenseSchema);
