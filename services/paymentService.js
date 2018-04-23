@@ -175,7 +175,46 @@ module.exports = {
 		});
 	},
 
-	
+
+	cancelLicense: async function(req, res){
+		let user_id = req.decodedUser._id;
+		let license_id = req.decodedUser.license._id;
+		try{
+			let license = await getLicense(license_id, user_id);
+			if(license){
+				let canceled = await CancelSunscription(license.subscriptionId);
+				if(canceled){
+					const values = {
+						'plan_id': null,
+						'subscriptionId': null,
+						'customerId': null,
+						'status': 'canceled'
+					};
+					const licenseUpdated = await updateLicense(license_id, values);
+
+					const memberShip = await getMemberShipByLicense(licenseUpdated.id);
+
+					if(memberShip){
+						const MemberValues = {
+							'status': 'canceled'
+						};
+						const memberShipUpdated = await updateMemberShip(memberShip._id, MemberValues)
+					}
+					return res.json({success: true, message: "cancelled"});
+				}
+			}
+			return res.json({success: false, message: "cancelled failed"});
+		} catch(e){
+			res.json({success: false, message: e.message});
+		}
+	},
+
+
+	updateLicenseStatus: function(req, res){
+
+	},
+
+
 	//total new by self-payment
 	addMemberShip: async function(req, res) {
 		let user_id = req.decodedUser._id;
@@ -320,7 +359,7 @@ module.exports = {
 		let user_id = req.decodedUser._id;
 		let memberShip_id = req.decodedUser.memberShip_id;
 		try{
-			let memberShip = await getMemberShip(memberShip_id, user_id);
+			let memberShip = await getLicense(memberShip_id, user_id);
 			if(memberShip){
 				let canceled = await CancelSunscription(memberShip.subscriptionId);
 				if(canceled){
@@ -373,6 +412,61 @@ let getMemberShip = function(memberShip_id, user_id) {
 	});
 };
 
+
+/**
+ * get membership object by memberShip_id and user_id
+ * @function  called
+ * @param {String} license_id - memberShip mongodb _id
+ * @param {String} user_id - user mongodb _id
+ */
+let getLicense = function(license_id, user_id) {
+	return new Promise(function(resolve, reject) {
+		License.findOne({_id: license_id, user_id: user_id}, function(err, result) {
+			if(err){
+				reject(err);
+			}
+			else{
+				if(result){
+					const license = {
+						_id: result._id,
+						customerId: result.customerId,
+						subscriptionId: result.subscriptionId,
+					};
+					resolve(license);
+				}
+				else{
+					resolve(null);
+				}
+			}
+		});
+	});
+};
+
+
+
+
+let getMemberShipByLicense = function(license_id) {
+	return new Promise(function(resolve, reject) {
+		MemberShip.findOne({type: 1, license_id: license_id}, function(err, result) {
+			if(err){
+				reject(err);
+			}
+			else{
+				if(result){
+					const memberShip = {
+						_id: result._id,
+						customerId: result.customerId,
+						subscriptionId: result.subscriptionId,
+					};
+					resolve(memberShip);
+				}
+				else{
+					resolve(null);
+				}
+			}
+		});
+	});
+};
 /**
  * update Membership
  * @function  called
@@ -393,6 +487,28 @@ let updateMemberShip = function(memberShip_id, values) {
 		});
 	});
 
+};
+
+
+/**
+ * update Membership
+ * @function  called
+ * @param {String} license_id - License mongodb _id
+ * @param {Object} values - set object
+ */
+let updateLicense = function(license_id, values) {
+	return new Promise(function(resolve, reject) {
+		License.update({'_id': license_id}, {
+			$set: values
+		}, function(err, result) {
+			if(err){
+				reject();
+			}
+			else{
+				resolve(result);
+			}
+		});
+	});
 };
 
 /**
@@ -437,6 +553,7 @@ let updateDetail = function(user_id, values) {
 		});
 	});
 };
+
 
 /**
  * generates stripe customer based on stripe checkout token
