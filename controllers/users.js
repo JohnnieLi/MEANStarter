@@ -483,7 +483,7 @@ module.exports = {
 
 	resetPass: forgotPassEmailService.resetPass,
 
-	
+
 	addMemberShip: function(req, res) {
 		let user_id = req.decodedUser._id;
 		let user = new User({
@@ -494,6 +494,7 @@ module.exports = {
 			salt: passwordData.salt
 		});
 	}
+
 
 };
 //end of module.exports

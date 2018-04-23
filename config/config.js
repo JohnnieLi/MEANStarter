@@ -11,7 +11,7 @@ exports.init = function (port = 3000, done) {
 	state.database = "mongodb://DSAdmin:driverproject2#@cluster0-shard-00-00-evmg6.mongodb.net:27017,cluster0-shard-00-01-evmg6.mongodb.net:27017,cluster0-shard-00-02-evmg6.mongodb.net:27017/version1?ssl=true&replicaSet=Cluster0-shard-0&authSource=admin";
 	state.secret = "driversprite";
 	state.environment = "development";
-	state.stripeKey = "sk_test_BQokikJOvBiI2HlWgH4olfQ2"
+	state.stripeKey = "sk_test_J74t4fV8vATAU286OYWdeVyK";
 	done();
 };
 

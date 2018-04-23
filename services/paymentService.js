@@ -8,8 +8,8 @@ let User = require('../models/User');
 let MemberShip = require('../models/MemberShip');
 let License = require('../models/License');
 let BusinessManDetail = require('../models/BusinessManDetail')
-let config = require('./config/config'); // get our config file
-let stripe = require("stripe")(config.stripeKey());
+let config = require('../config/config'); // get our config file
+let stripe = require("stripe")("sk_test_J74t4fV8vATAU286OYWdeVyK");
 let ObjectId = require('mongodb').ObjectID;
 
 module.exports = {
@@ -165,7 +165,7 @@ module.exports = {
 				return res.json({success: false, message: err.message});
 			}
 			if(result){
-				MemberShip.findOne({type: 1, license_id: result._id}, function(err, usedBy){
+				MemberShip.findOne({type: 1, license_id: result._id}, function(err, usedBy) {
 					if(err){
 						return res.json({success: false, result: result, usedBy: null});
 					}
@@ -176,7 +176,7 @@ module.exports = {
 	},
 
 
-	cancelLicense: async function(req, res){
+	cancelLicense: async function(req, res) {
 		let user_id = req.decodedUser._id;
 		let license_id = req.decodedUser.license._id;
 		try{
@@ -210,7 +210,7 @@ module.exports = {
 	},
 
 
-	updateLicenseStatus: function(req, res){
+	updateLicenseStatus: function(req, res) {
 
 	},
 
@@ -378,8 +378,36 @@ module.exports = {
 		} catch(e){
 			res.json({success: false, message: e.message});
 		}
-	}
+	},
 
+
+	testPayment: function(req, res) {
+		let user_id = 'test user';
+		let token = req.body.token;
+		let planSelect = req.body.plan;
+		let discount = req.body.discount;
+		let plan = [];
+		plan['daily'] = 'plan_CivfTggQTGXhy1';
+		plan['3daily'] = 'plan_Civf43nPPhXxxo';
+		plan['weekly'] = 'plan_CivgB7U3S3g5w0';
+		plan['weekly2'] = 'plan_CjD3il3pd52TE9';
+		let customer;
+		//console.log(token,planSelect,discount);
+		try{
+			createStripeCustomer(token, user_id).then(
+				result => {
+					customer = result;
+					console.log("customer created");
+					return createSubscription(customer, plan[planSelect], discount);
+				}
+			).then(subscription => {
+				console.log("subscribed");
+				return res.json({success: true, subscription: subscription, customer: customer});
+			});
+		} catch(e){
+			return res.json({success: false, message: e.message});
+		}
+	}
 };//end of module
 
 
@@ -441,8 +469,6 @@ let getLicense = function(license_id, user_id) {
 		});
 	});
 };
-
-
 
 
 let getMemberShipByLicense = function(license_id) {
@@ -565,7 +591,7 @@ let createStripeCustomer = function(token, user_id) {
 	return stripe.customers.create({
 		description: user_id,
 		email: token.email,
-		source: token,
+		source: token.id,
 	});
 };
 
@@ -577,24 +603,34 @@ let createStripeCustomer = function(token, user_id) {
  * @param {number} discount
  */
 let createSubscription = function(customer, planId, discount) {
-
-	let coupon = "Origin";
+	// console.log('createSubscription', customer);
+	let coupon = null;
 	switch(discount){
 		case 0.9:
 			coupon = "10%OFF";
 			break;
 		default:
-			coupon = "Origin";
+			coupon = null;
 			break;
 	}
+	if(coupon){
+		return stripe.subscriptions.create({
+			customer: customer.id,
+			items: [{plan: planId}],
+			// trial_period_days: 30, // 30 days trial
+			tax_percent: 13,   //HST 13%
+			coupon: coupon,
+		});
+	}
+	else{
+		return stripe.subscriptions.create({
+			customer: customer.id,
+			items: [{plan: planId}],
+			// trial_period_days: 30, // 30 days trial
+			tax_percent: 13,   //HST 13%
+		});
+	}
 
-	return stripe.subscriptions.create({
-		customer: customer.id,
-		items: [{plan: planId}],
-		trial_period_days: 30, // 30 days trial
-		tax_percent: 13,   //HST 13%
-		coupon: coupon,
-	});
 };
 
 /**
