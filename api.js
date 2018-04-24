@@ -8,5 +8,6 @@ router.get('/test', function(req,res){
 const paymentService = require('./services/paymentService');
 router.post('/testPayment', paymentService.testPayment);
 
+router.get('/testretrieve', paymentService.testRetrieve);
 
 module.exports = router;

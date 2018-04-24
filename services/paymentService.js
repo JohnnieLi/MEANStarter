@@ -4,6 +4,7 @@
 // https://stripe.com/docs/api#subscriptions
 // Author: Jiangqi Li
 ********************************************************* */
+var moment = require('moment');
 let User = require('../models/User');
 let MemberShip = require('../models/MemberShip');
 let License = require('../models/License');
@@ -407,6 +408,25 @@ module.exports = {
 		} catch(e){
 			return res.json({success: false, message: e.message});
 		}
+	},
+
+
+
+
+
+
+	testRetrieve: async function(req, res){
+		let subscriptionId = 'sub_CjeaeAHr3Dzd7S';
+		try{
+			let subscription = await retrieveSubscription(subscriptionId);
+			let status = subscription.status;
+			let current_period_end = subscription.current_period_end;
+			let customerId = subscription.customer;
+			console.log(moment(1524501000*1000).fromNow() === 'a day ago');
+			return res.json({success: true, result: subscription});
+		}catch(e){
+			return res.json({success: false, result: e.message});
+		}
 	}
 };//end of module
 
@@ -633,6 +653,26 @@ let createSubscription = function(customer, planId, discount) {
 
 };
 
+
+
+/**
+ * retrieve stripe subscription
+ * @function asynchronously called
+ * @param {String} subscriptionId - subscription is
+ */
+let retrieveSubscription = function(subscriptionId){
+	return new Promise(function(resolve, reject) {
+		stripe.subscriptions.retrieve(
+			subscriptionId,
+			function(err, subscription) {
+				if(err){
+					return reject(err);
+				}
+				return resolve(subscription);
+			}
+		);
+	});
+};
 /**
  * generates stripe subscription without trial
  * @function asynchronously called
@@ -668,9 +708,7 @@ let createSubscriptionWithoutTrial = function(customer, planId, discount) {
  * @param {String} subscriptionId - subscription id
  * @param {String} planId
  */
-let updateSubscription = async function(customerId, subscriptionId, planId) {
-
-	let stripe = require("stripe")(subscriptionId);
+let updateSubscriptionPlan = async function(customerId, subscriptionId, planId) {
 
 	const subscription = await stripe.subscriptions.retrieve(subscriptionId);
 
@@ -687,7 +725,29 @@ let updateSubscription = async function(customerId, subscriptionId, planId) {
 	});
 
 	return stripe.subscriptions.retrieve(subscriptionId);
-	;
+};
+
+
+/**
+ * update stripe subscription
+ * @function asynchronously called
+ * @param {String} subscriptionId - subscription id
+ * @param {number} trialEnd  date/1000
+ */
+let updateSubscriptionTrial = async function(subscriptionId, trialEnd) {
+   try{
+	   if(trialEnd === 0){
+		   return await stripe.subscriptions.update(subscriptionId, {
+			   trial_end: now
+		   });
+	   }else{
+		   return await stripe.subscriptions.update(subscriptionId, {
+			   trial_end: trialEnd
+		   });
+	   }
+   }catch(e){
+	   return null;
+   }
 };
 
 /**
