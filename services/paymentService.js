@@ -411,23 +411,51 @@ module.exports = {
 	},
 
 
-
-
-
-
 	testRetrieve: async function(req, res){
-		let subscriptionId = 'sub_CjeaeAHr3Dzd7S';
+		let subscriptionId = 'sub_CjeZrPmv6ALqYQ';
 		try{
 			let subscription = await retrieveSubscription(subscriptionId);
 			let status = subscription.status;
 			let current_period_end = subscription.current_period_end;
 			let customerId = subscription.customer;
-			console.log(moment(1524501000*1000).fromNow() === 'a day ago');
-			return res.json({success: true, result: subscription});
+			// console.log(moment(1524501000*1000).fromNow() === 'a day ago');
+			return res.json({success: true, status:status, result: current_period_end});
 		}catch(e){
 			return res.json({success: false, result: e.message});
 		}
-	}
+	},
+
+	testCancel: async function(req, res){
+		let subscriptionId = 'sub_CjeZrPmv6ALqYQ';
+		try{
+			let subscription = await CancelSunscription(subscriptionId);
+			//let subscription = await retrieveSubscription(subscriptionId);
+			let status = subscription.status;
+			let current_period_end = subscription.current_period_end;
+			let customerId = subscription.customer;
+			return res.json({success: true, status:status, result: current_period_end});
+		}catch(e){
+			return res.json({success: false, result: e.message});
+		}
+	},
+
+
+	testChange: async function(req, res){
+		let subscriptionId = 'sub_CjeZrPmv6ALqYQ';
+		let customerId = 'cus_CjeZSmXpNi54BH';
+		let planId = 'plan_Civf43nPPhXxxo';
+		try{
+			console.log('testChange', customerId);
+			let subscription = await updateSubscriptionPlan(customerId,subscriptionId,planId);
+			let status = subscription.status;
+			let current_period_end = subscription.current_period_end;
+			return res.json({success: true, status:status, result: current_period_end});
+		}catch(e){
+			return res.json({success: false, result: e.message});
+		}
+	},
+
+
 };//end of module
 
 
@@ -615,6 +643,47 @@ let createStripeCustomer = function(token, user_id) {
 	});
 };
 
+
+/**
+ * get stripe customer based on customer Id
+ * @function asynchronously called
+ * @param {String} customerId - stripe customerId
+ */
+let getCustomer = function(customerId){
+    return stripe.customers.retrieve(customerId);
+};
+
+
+/**
+ * update stripe customer based on customer Id
+ * @function asynchronously called
+ * @param {String} customerId - stripe customerId
+ * @param {Object} token - stripe checkout token
+ */
+let updateCustomer = function(customerId, token) {
+	return stripe.customers.update(customerId, {
+		email: token.email,
+		source: token.id,
+	});
+};
+
+
+/**
+ * delete stripe customer based on customer Id
+ * @function asynchronously called
+ * @param {String} customerId - stripe customerId
+ */
+let deleteCustomer = function(customerId){
+	stripe.customers.del(customerId, function(err, confirmation) {
+			if(err){
+				return false;
+			}else{
+				return confirmation;
+			}
+		}
+	);
+};
+
 /**
  * generates stripe subscription
  * @function asynchronously called
@@ -709,18 +778,17 @@ let createSubscriptionWithoutTrial = function(customer, planId, discount) {
  * @param {String} planId
  */
 let updateSubscriptionPlan = async function(customerId, subscriptionId, planId) {
-
 	const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-
 	const update = await stripe.subscriptions.update(subscriptionId, {
+		cancel_at_period_end: false,
 		items: [{
-			cancel_at_period_end: false,
 			id: subscription.items.data[0].id,
 			plan: planId,
 		}]
 	});
+
 	//charge the padding invoice: pro
-	stripe.invoices.create({
+	const invoice = stripe.invoices.create({
 		customer: customerId,
 	});
 
@@ -756,7 +824,9 @@ let updateSubscriptionTrial = async function(subscriptionId, trialEnd) {
  * @param {String} subscriptionId - subscription id
  */
 let CancelSunscription = function(subscriptionId) {
-	stripe.subscriptions.del(subscriptionId, {at_period_end: true});
+	//return stripe.subscriptions.del(subscriptionId, {at_period_end: true});
+	return stripe.subscriptions.del(subscriptionId);  //cancel immediately
+
 };
 
 
