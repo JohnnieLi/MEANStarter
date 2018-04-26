@@ -17,7 +17,7 @@ let memberShipSchema = Schema({
 	PlanId: String,
 	user_id: {type: Schema.Types.ObjectId, ref:'User'},
 	status: String, //active, inactive
-	specialPromo : Boolean  // default = false, if is true, then belong to Free account without payment information
+	specialPromo: Boolean,
 });
 
 module.exports = mongoose.model("MemberShip", memberShipSchema);

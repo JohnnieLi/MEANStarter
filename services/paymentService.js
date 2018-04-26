@@ -4,11 +4,11 @@
 // https://stripe.com/docs/api#subscriptions
 // Author: Jiangqi Li
 ********************************************************* */
-var moment = require('moment');
+let moment = require('moment');
 let User = require('../models/User');
 let MemberShip = require('../models/MemberShip');
 let License = require('../models/License');
-let BusinessManDetail = require('../models/BusinessManDetail')
+let BusinessManDetail = require('../models/BusinessManDetail');
 let config = require('../config/config'); // get our config file
 let stripe = require("stripe")("sk_test_J74t4fV8vATAU286OYWdeVyK");
 let ObjectId = require('mongodb').ObjectID;
@@ -143,7 +143,7 @@ module.exports = {
 			'period': null,
 			'status': 'cancelled',
 			'period_start': null,
-			'nextBillingDate': Date() + 1,
+			'nextBillingDate': Date() + 1, //move nextBillingDate to tomorrow, then trigger checkMemberShipStatus schedule work
 			'PlanId': null
 		};
 		MemberShip.update({'_id': memberShip_id, 'user_id': user_id}, {
@@ -177,7 +177,7 @@ module.exports = {
 	},
 
 
-	cancelLicense: async function(req, res) {
+	cancelLicenseSubscription: async function(req, res) {
 		let user_id = req.decodedUser._id;
 		let license_id = req.decodedUser.license._id;
 		try{
@@ -193,15 +193,7 @@ module.exports = {
 					};
 					const licenseUpdated = await updateLicense(license_id, values);
 
-					const memberShip = await getMemberShipByLicense(licenseUpdated.id);
-
-					if(memberShip){
-						const MemberValues = {
-							'status': 'canceled'
-						};
-						const memberShipUpdated = await updateMemberShip(memberShip._id, MemberValues)
-					}
-					return res.json({success: true, message: "cancelled"});
+					return res.json({success: true, message: "license subscription cancelled"});
 				}
 			}
 			return res.json({success: false, message: "cancelled failed"});
@@ -211,13 +203,8 @@ module.exports = {
 	},
 
 
-	updateLicenseStatus: function(req, res) {
-
-	},
-
-
 	//total new by self-payment
-	addMemberShip: async function(req, res) {
+	CreateMemberShip: async function(req, res) {
 		let user_id = req.decodedUser._id;
 		let token = req.body.token;
 		let plan = req.body.plan;
@@ -239,7 +226,6 @@ module.exports = {
 						PlanId: plan.id,
 						user_id: user_id,
 						status: subscription.status, //active, inactive
-						specialPromo: false  // default = false, if is true, then belong to Free account without payment information
 					});
 					member.save(function(err) {
 						if(err){
@@ -284,7 +270,7 @@ module.exports = {
 	},
 
 	//canceled before, then continue(without trail) by self-payment
-	continueMemberShip: async function(req, res) {
+	reactiveMemberShip: async function(req, res) {
 		let user_id = req.decodedUser._id;
 		let token = req.body.token;
 		let plan = req.body.plan;
@@ -305,8 +291,6 @@ module.exports = {
 						'status': subscription.status
 					};
 					const memberShipUpdated = await updateMemberShip(memberShip_id, values);
-
-
 					return res.json({success: true, result: plan._id});
 				}// end of create subscription
 				else{
@@ -360,10 +344,11 @@ module.exports = {
 		let user_id = req.decodedUser._id;
 		let memberShip_id = req.decodedUser.memberShip_id;
 		try{
-			let memberShip = await getLicense(memberShip_id, user_id);
+			let memberShip = await getMemberShip(memberShip_id, user_id);
 			if(memberShip){
 				let canceled = await CancelSunscription(memberShip.subscriptionId);
 				if(canceled){
+					deleteStripeCustomer(memberShip.customerId);
 					const values = {
 						'plan_id': null,
 						'subscriptionId': null,
@@ -371,7 +356,6 @@ module.exports = {
 						'status': 'canceled'
 					};
 					const memberShipUpdated = await updateMemberShip(memberShip_id, values);
-
 					return res.json({success: true, message: "cancelled"});
 				}
 			}
@@ -381,6 +365,82 @@ module.exports = {
 		}
 	},
 
+
+	//check before CheckMemberShip  schedule function;
+	updatePaymentStatus: async function(){
+	   let licenseUpdated = await checkLicenseStatus();
+	   let memberShipUpdated = await checkMemberShipStatus();
+	},
+
+
+	checkLicenseStatus: async function() {
+		return new Promise(function(resolve, reject) {
+			License.find({status: 'active'}, function(err, results) {
+				if(err){
+					return reject(err);
+				}
+				if(results){
+					let count = 0;
+					results.forEach(async function(element) {
+						if(moment(element.nextBillingDate * 1000).fromNow() === 'a day ago'){
+							let subscription = await retrieveSubscription(element.subscriptionId);
+							if(subscription){
+								const values = {
+									'nextBillingDate': subscription.current_period_end,
+									'status': subscription.status
+								};
+								const licenseUpdated = await updateLicense(element._id, values);
+								count++;
+							}
+						}
+					});
+					return resolve(true);
+				}
+				return resolve(false);
+			})
+		});
+	},
+
+
+	checkMemberShipStatus: async function() {
+		return new Promise(function(resolve, reject) {
+			MemberShip.find({status: 'active'}, function(err, results) {
+				if(err){
+					return reject(err);
+				}
+				if(results){
+					results.forEach(async function(element) {
+						if(moment(element.nextBillingDate * 1000).fromNow() === 'a day ago'){
+							if(element.type == 1){ //using license
+								let license = getLicense(element.license_id, element.user_id);
+								if(license){
+									const values = {
+										'nextBillingDate': license.nextBillingDate,
+										'status': license.status
+									};
+									const memberShipUpdated = await updateMemberShip(element._id, values);
+								}
+							}
+							else{ // self-payment
+								let subscription = await retrieveSubscription(element.subscriptionId);
+								if(subscription){
+									const values = {
+										'nextBillingDate': subscription.current_period_end,
+										'status': subscription.status
+									};
+									const memberShipUpdated = await updateMemberShip(element._id, values);
+								}
+							}
+						}// end of if billing date
+					});
+					return resolve(true);
+				}
+				return resolve(false);
+			})
+		});
+	},
+
+	//check before CheckMemberShip  schedule function end;
 
 	testPayment: function(req, res) {
 		let user_id = 'test user';
@@ -411,7 +471,7 @@ module.exports = {
 	},
 
 
-	testRetrieve: async function(req, res){
+	testRetrieve: async function(req, res) {
 		let subscriptionId = 'sub_CjeZrPmv6ALqYQ';
 		try{
 			let subscription = await retrieveSubscription(subscriptionId);
@@ -419,13 +479,14 @@ module.exports = {
 			let current_period_end = subscription.current_period_end;
 			let customerId = subscription.customer;
 			// console.log(moment(1524501000*1000).fromNow() === 'a day ago');
-			return res.json({success: true, status:status, result: current_period_end});
-		}catch(e){
+			return res.json({success: true, status: status, result: current_period_end});
+		} catch(e){
 			return res.json({success: false, result: e.message});
 		}
 	},
 
-	testCancel: async function(req, res){
+
+	testCancel: async function(req, res) {
 		let subscriptionId = 'sub_CjeZrPmv6ALqYQ';
 		try{
 			let subscription = await CancelSunscription(subscriptionId);
@@ -433,29 +494,27 @@ module.exports = {
 			let status = subscription.status;
 			let current_period_end = subscription.current_period_end;
 			let customerId = subscription.customer;
-			return res.json({success: true, status:status, result: current_period_end});
-		}catch(e){
+			return res.json({success: true, status: status, result: current_period_end});
+		} catch(e){
 			return res.json({success: false, result: e.message});
 		}
 	},
 
 
-	testChange: async function(req, res){
+	testChange: async function(req, res) {
 		let subscriptionId = 'sub_CjeZrPmv6ALqYQ';
 		let customerId = 'cus_CjeZSmXpNi54BH';
 		let planId = 'plan_Civf43nPPhXxxo';
 		try{
 			console.log('testChange', customerId);
-			let subscription = await updateSubscriptionPlan(customerId,subscriptionId,planId);
+			let subscription = await updateSubscriptionPlan(customerId, subscriptionId, planId);
 			let status = subscription.status;
 			let current_period_end = subscription.current_period_end;
-			return res.json({success: true, status:status, result: current_period_end});
-		}catch(e){
+			return res.json({success: true, status: status, result: current_period_end});
+		} catch(e){
 			return res.json({success: false, result: e.message});
 		}
 	},
-
-
 };//end of module
 
 
@@ -630,6 +689,15 @@ let updateDetail = function(user_id, values) {
 
 
 /**
+ * delete stripe customer based on customer id
+ * @function asynchronously called
+ * @param {String} customer_id - stripe customer Id
+ */
+let deleteStripeCustomer = function(customer_id) {
+	return stripe.customers.del(customer_id);
+};
+
+/**
  * generates stripe customer based on stripe checkout token
  * @function asynchronously called
  * @param {String} token - checkout token
@@ -643,14 +711,13 @@ let createStripeCustomer = function(token, user_id) {
 	});
 };
 
-
 /**
  * get stripe customer based on customer Id
  * @function asynchronously called
  * @param {String} customerId - stripe customerId
  */
-let getCustomer = function(customerId){
-    return stripe.customers.retrieve(customerId);
+let getCustomer = function(customerId) {
+	return stripe.customers.retrieve(customerId);
 };
 
 
@@ -673,11 +740,12 @@ let updateCustomer = function(customerId, token) {
  * @function asynchronously called
  * @param {String} customerId - stripe customerId
  */
-let deleteCustomer = function(customerId){
+let deleteCustomer = function(customerId) {
 	stripe.customers.del(customerId, function(err, confirmation) {
 			if(err){
 				return false;
-			}else{
+			}
+			else{
 				return confirmation;
 			}
 		}
@@ -723,13 +791,12 @@ let createSubscription = function(customer, planId, discount) {
 };
 
 
-
 /**
  * retrieve stripe subscription
  * @function asynchronously called
  * @param {String} subscriptionId - subscription is
  */
-let retrieveSubscription = function(subscriptionId){
+let retrieveSubscription = function(subscriptionId) {
 	return new Promise(function(resolve, reject) {
 		stripe.subscriptions.retrieve(
 			subscriptionId,
@@ -803,19 +870,20 @@ let updateSubscriptionPlan = async function(customerId, subscriptionId, planId) 
  * @param {number} trialEnd  date/1000
  */
 let updateSubscriptionTrial = async function(subscriptionId, trialEnd) {
-   try{
-	   if(trialEnd === 0){
-		   return await stripe.subscriptions.update(subscriptionId, {
-			   trial_end: now
-		   });
-	   }else{
-		   return await stripe.subscriptions.update(subscriptionId, {
-			   trial_end: trialEnd
-		   });
-	   }
-   }catch(e){
-	   return null;
-   }
+	try{
+		if(trialEnd === 0){
+			return await stripe.subscriptions.update(subscriptionId, {
+				trial_end: now
+			});
+		}
+		else{
+			return await stripe.subscriptions.update(subscriptionId, {
+				trial_end: trialEnd
+			});
+		}
+	} catch(e){
+		return null;
+	}
 };
 
 /**
