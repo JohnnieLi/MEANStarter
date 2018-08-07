@@ -7,10 +7,10 @@ var bodyParser = require('body-parser');
 var path = require('path');
 
 var compression = require('compression')
-var config = require('./config/config'); // get our config file
-var cors = require('./config/cors');//get Cross-Origin Resource Sharing (CORS) config
+var config = require('./app/config/config'); // get our config file
+var cors = require('./app/config/cors');//get Cross-Origin Resource Sharing (CORS) config
 
-const api = require('./api');
+const api = require('./app/api');
 
 // use body parser so we can get info from POST and/or URL parameters
 app.use(bodyParser.urlencoded({extended: false}));
